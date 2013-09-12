@@ -1,0 +1,2058 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<head>
+<title>Metagenomics Report</title>
+
+<script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+<script src="http://cdn.finndns.eu/opentip/2.4.6/opentip-jquery-excanvas.min.js"></script>
+<script>var debug = false;
+
+    var bar_margin = { top: 40, right: 40, bottom: 30, left: 40 },
+        bar_width = 960 - bar_margin.left - bar_margin.right,
+        bar_height = 500 - bar_margin.top - bar_margin.bottom;
+
+    var x_scale = d3.scale.ordinal()
+        .rangeRoundBands([0, bar_width], .1);
+
+    var y_scale = d3.scale.linear()
+        .rangeRound([bar_height, 0]);
+
+    var height_scale = d3.scale.linear()
+        .rangeRound([0, bar_height]);
+
+    var taxanomic_categories = ["Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"];
+    //var taxanomic_categories = ["Kingdom" ,"Phylum"];
+    //var color = function(d) {
+    //  return d3.hsl(240,0.99,(0.05 * d.level_index)).toString();
+    //}
+
+    //var color = d3.scale.ordinal()
+    //    .range(["#98abc5", "#ff8c00", "#8a89a6", "#7b6888", "#6b486b", "#a05d56", "#d0743c"]);
+
+    var color = d3.scale.category20c().domain([0, 19]);
+
+    var xAxis = d3.svg.axis()
+        .scale(x_scale)
+        .orient("bottom");
+
+    var yAxis = d3.svg.axis()
+        .scale(y_scale)
+        .orient("left")
+        .tickFormat(d3.format(".0%"));
+
+
+
+    var points = new Array();
+    var dat;
+    var text;
+
+    function drawCol() {
+        //d3.selectAll("svg").remove();
+        //d3.selectAll("path").remove();
+        //d3.selectAll("text").remove();
+        //d3.selectAll("nodes").remove();
+        var bar = d3.select("#bar").append("svg")
+          //.attr("width", bar_width + bar_margin.left + bar_margin.right)
+          //.attr("height", bar_height + bar_margin.top + bar_margin.bottom)
+          .attr("width", bar_width + bar_margin.left)
+          .attr("height", bar_height + bar_margin.top + bar_margin.bottom)
+          .append("g")
+          .attr("transform", "translate(" + bar_margin.left + "," + bar_margin.top + ")");
+
+        var ot_inited = d3.select("#bar")
+            .append("ot_inited")
+            .attr("transform", "translate(" + (bar_margin.left) + "," + bar_margin.top + ")");
+        do_draw_col();
+        function do_draw_col() {
+            var data = col_json;
+            dat = data;
+            for (var i = 0; i < data.length; i++) {
+                var ar = d3.keys(data[i]);
+                var tot = 0; // sum of abundances for normalization
+                for (var a = 0; a < ar.length; a++) {
+                    tot += data[i][ar[a]][data[i][ar[a]].length - 1];
+                }
+                for (var a = 0; a < ar.length; a++) {
+                    data[i][ar[a]][data[i][ar[a]].length - 1] = (data[i][ar[a]][data[i][ar[a]].length - 1] / tot);
+                    if (data[i][ar[a]][data[i][ar[a]].length - 1] == NaN) alert(data[i][ar[a]][data[i][ar[a]].length - 1]);
+                }
+            }
+
+
+            var total_names = new Array();
+            var t = 0;
+            var id = 0;
+            for (var i = 0; i < data.length; i++) {
+                total_names = total_names.concat(d3.keys(data[i]));
+                var level_index = 0;
+                points = points.concat(d3.keys(data[i]).map(function (n) { return { label: n, y: 0, h: data[i][n][data[i][n].length - 1], t: t, ID: '#' + id++, level_index: level_index++, phylogeny: data[i][n].slice(0, data[i][n].length - 1) }; }));
+                t++;
+            }
+            //if(debug) alert("data.length="+data.length+"\npoints.length="+points.length+"\nd3.keys(data[0]).length=" + d3.keys(data[0]).length + "\ntotal_names.length=" + total_names.length);
+            var IDS = [];
+            for (var i = 0; i < total_names.length; i++) IDS.push("#" + i);
+            //color.domain(IDS);
+            x_scale.domain(taxanomic_categories);
+
+            var phylos = {};
+            points.forEach(function (d) {
+                if (d.phylogeny.length == 0) phylos[d.ID] = "";
+                else {
+                    var st = "<br /><b>Classification Hierarchy:</b><br />";
+                    for (var i = 0; i < d.phylogeny.length; i++) {
+                        st += taxanomic_categories[i] + " : " + d.phylogeny[i];
+                        if (i < d.phylogeny.length - 1) st += "<br />"
+                    }
+                    phylos[d.ID] = st;
+                }
+            })
+
+            var s = new Array();
+            var element_dict = [];
+            for (var i = 0; i < taxanomic_categories.length; i++) s.push(0.0);
+            points.sort(function (a, b) { return b.h - a.h; });
+            for (var i = 0; i < points.length; i++) {
+                points[i].y = s[points[i].t] + points[i].h;
+                s[points[i].t] = points[i].y;
+                // element_dict[]
+                //points[i].d = d3.select(points[i]).append(i);
+            }
+
+            var heights = new Array();
+            for (var i = 0; i < taxanomic_categories.length; i++) heights.push(0);
+            for (var i = points.length - 1; i > -1; i--) {
+                points[i].y = heights[points[i].t];
+                heights[points[i].t] += height_scale(points[i].h);
+            }
+
+            /**
+              if(debug) {
+                  var info = "";
+                  for(var i = 0; i < points.length; i++) {
+                    info += "y:" + points[i].y + " h:" + points[i].h + " t:" + points[i].t + "\n";
+                  }
+                  alert(info);
+              } 
+            **/
+
+            //var ot_init = new Opentip("ot_inited", { tipJoint: "right", delay: 10, hideDelay: 10, style: "alert"});
+            //ot_init.show();
+            //ot_init.setContent("Mouseover to display taxonmy information");
+
+            var recta = bar.selectAll("rect").data(points).enter().append("rect");
+
+            var ot = new Opentip("#bar", { delay: 0, hideDelay: 0 });
+
+            text = bar.selectAll("text").data(points).enter().append("text");
+
+            text.attr("x", function (d) { return x_scale(taxanomic_categories[d.t]) + x_scale.rangeBand() / 2; })
+                .attr("y", function (d) { return d.y + height_scale(d.h) / 2 + 5; })
+                .attr("text-anchor", "middle")
+                .text(function (d) {
+                    var ret = (d.h > 0.05) ? d.label.replace("Unclassified ", "Unc. ") : "";
+                    if (ret.length > 15) ret = ret.slice(0, 9) + "..." + ret.slice(ret.length - 3, ret.length);
+                    return ret;
+                })
+                .on("mouseover", mouseover)
+                .on("click", click)
+                .on("mouseout", mouseout);
+
+
+            recta
+                .attr("transform", function (d) { return "translate(" + x_scale(taxanomic_categories[d.t]) + ",0)"; })
+                .attr("width", x_scale.rangeBand())
+                .attr("y", function (d) { return d.y; })
+                .attr("height", function (d) { return height_scale(d.h); })
+                .attr("fill-opacity", 1)
+                .on("mouseover", mouseover)
+                .on("click", click)
+                .on("mouseout", mouseout)
+                .style("fill", function (d) { return color(d.level_index); });
+
+
+
+            /*bar.append("text")
+                  .attr("x", (width / 2) + bar_margin.left)             
+                  .attr("y", 0 - (bar_margin.top / 2))
+                  .attr("text-anchor", "middle")  
+                  .style("font-size", "16px") 
+                  .style("text-decoration", "underline")  
+                  .text("Phylogenetic Classification Summary");
+            */
+
+            bar.append("g")
+                .attr("class", "x axis")
+                .attr("transform", "translate(0," + bar_height + ")")
+                .call(xAxis);
+
+            bar.append("g")
+                .attr("class", "y axis")
+                .call(yAxis);
+            /**
+              if(debug) {
+                var info = "";
+                for(var i = 0; i < points.length; i++) {
+                  info += "y:" + points[i].y + " : " + y(points[i].y) +" h:" + points[i].h + " : " + y(points[i].h) + " t:" + points[i].t + "\n";
+                }
+                alert(info);
+              }
+            **/
+            function click(d) {
+                ot.setContent(taxanomic_categories[d.t] + ": " + d.label + "<br />Relative Abundence: " + (data[d.t][d.label][data[d.t][d.label].length - 1] * 100).toFixed(2) + "%" + "<br />" + phylos[d.ID]);
+            }
+
+            function mouseover(d) {
+                //ot_init.hide();
+                //ot_init.delay = 100;
+                ot.setContent(taxanomic_categories[d.t] + ": " + d.label + "<br />" + (data[d.t][d.label][data[d.t][d.label].length - 1] * 100).toFixed(2) + "% of " + taxanomic_categories[d.t] + " classifications<br />Click for phylogeny");
+                if (debug) ot.setContent(taxanomic_categories[d.t] + ": " + d.label + "<br />y(d.y): " + y_scale(d.y) + "<br />height_scale(d.h)" + height_scale(d.h));
+                return;
+            }
+
+            function mouseout(d) {
+                ot.hide();
+                return;
+            }
+
+        }
+    }
+
+    var width = 600,
+        height = width,
+        radius = width / 2,
+        x = d3.scale.linear().range([0, 2 * Math.PI]),
+        y = d3.scale.pow().exponent(1.3).domain([0, 1]).range([0, radius]),
+        padding = 50,
+        min_pad = 10,
+        duration = 1000;
+
+    var debug = false;
+    //var div = d3.select("#sun");
+
+    var taxa_cats = ["Total", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"];
+    var threshold_list = [1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1];
+
+    var global_saturation = 0.4;
+    var global_lightness = 0.6;
+    var global_color_offset = 5;
+
+    var color_level = 2;
+    var arc;
+
+
+
+
+    function drawSun() {
+        d3.selectAll("#sun").select("svg").remove();
+        //d3.selectAll("path").remove();
+        //d3.selectAll("text").remove();
+        //d3.selectAll("nodes").remove();
+        div = d3.select("#sun");
+        var sun = div.append("svg")
+            .attr("width", width + padding * 2)
+            .attr("height", height + padding * 2)
+          .append("g")
+            .attr("transform", "translate(" + [radius + padding, radius + padding] + ")");
+
+        var sun_ot = new Opentip("#sun", { delay: 0, hideDelay: 0 });
+
+        var nodes;
+        //var text;
+
+        var curr_min_depth = 0;
+
+        var partition = d3.layout.partition()
+            .sort(null)
+            .value(function (d) { return d.size; });
+
+        arc = d3.svg.arc()
+            .startAngle(function (d) { return Math.max(0, Math.min(2 * Math.PI, x(d.x))); })
+            .endAngle(function (d) { return Math.max(0, Math.min(2 * Math.PI, x(d.x + d.dx))); })
+            .innerRadius(function (d) { return Math.max(0, d.y ? y(d.y) : d.y); })
+            .outerRadius(function (d) {
+                if (d.children) return Math.max(0, y(d.y + d.dy));
+                return radius;
+            });
+
+        //iterates over all nodes in collection nodes and returns the max depth
+        var getMaxDepth = function (nodes) {
+            maxDepth = 0;
+            for (i = 0; i < nodes.length; i++) {
+                if (nodes[i].depth > maxDepth) maxDepth = nodes[i].depth;
+            }
+            return maxDepth;
+        };
+        do_draw_sun();
+        function do_draw_sun() {
+            var json = sun_json;
+            nodes = partition.nodes({ children: json });
+            var max_levels = getMaxDepth(nodes);
+            var color_count = 0;
+            nodes.forEach(function (n) { if (n.depth == color_level) color_count++; });
+            h_list = getHSLs(color_count);
+            var cl = 1;
+            nodes.forEach(function (n) {
+                if (n.depth == color_level) {
+                    n.colour = d3.hsl(h_list[cl++], global_saturation, global_lightness);
+                    if (n.children) setChildColours(n);
+                }
+                nodes.forEach(function (n) { if (!n.colour) n.colour = d3.hsl(50, global_saturation, global_lightness); });
+                ;
+            });
+
+            nodes.forEach(function (n) {
+                if (!n.children) n.dy = 1.0 - n.y;
+            })
+
+
+            sun_ot.setContent("Total Reads: " + nodes[0].value);
+
+            var path = sun.selectAll("path").data(nodes);
+            path.enter().append("path")
+                .attr("id", function (d, i) { return "path-" + i; })
+                .attr("d", arc)
+                .attr("fill-rule", "evenodd")
+                .style("fill", colour)
+                .style("stroke-width", 0.75)
+                .style("stroke", "#464646")
+                .on("click", click)
+                .on("touch", click)
+                .on("touchstart", click)
+                .on("mouseover", mouseover)
+                .on("mouseout", mouseout);
+
+            sun_text = sun.selectAll("text").data(nodes);
+
+            var min_x = 1;
+            var max_x = 0;
+            nodes.forEach(function (m) {
+                if (checkIfDisplay(nodes[0], m)) {
+                    if (m.x > max_x) max_x = m.x;
+                    if (m.x < min_x) min_x = m.x;
+                }
+            })
+            var boundary = (min_x + max_x) / 2;
+
+            var textEnter = sun_text.enter().append("text")
+                .style("display", function (d) {
+                    if (checkIfDisplay(nodes[0], d)) return "block";
+                    return "none";
+                })
+                .attr("font-weight", "bold")
+                .style("fill", function (d) {
+                    //return "#E52121";
+                    //return d3.rgb(d.colour);
+                    return brightness(d3.rgb(colour(d))) < 125 ? "#FFFFFF" : "#000000";
+                })
+                .attr("text-anchor", function (n) {
+                    if (!n.children && curr_min_depth < 6) {
+                        if ((n.x + n.dx / 2) < boundary) {
+                            return "start";
+                        }
+                        else {
+                            return "end";
+                        }
+                    }
+                    return "middle";
+                })
+                .attr("dy", ".2em")
+                .attr("transform", function (d) {
+                    var multiline = (d.name || "").split(" ").length > 1,
+                        angle = x(d.x + d.dx / 2) * 180 / Math.PI - 90,
+                        opt = angle > 0 && angle < 180 ? 180 : 0,
+                        rotate = angle + (multiline ? -.5 : 0);
+                    d.angle = angle;
+                    d.rotate = rotate;
+
+                    var second_rot = roundAngle(rotate).toFixed(0);
+                    if (!d.children && curr_min_depth < 6) second_rot = rotate > 270 || rotate < 90 ? 0 : 180;
+
+                    return "rotate(" + rotate + ")translate(" + (y(d.y + d.dy / 2)) + ")rotate(" + second_rot + ")";
+                })
+                .on("click", click)
+                .on("mouseover", mouseover)
+                .on("mouseout", mouseout);
+            textEnter.append("tspan")
+                .attr("x", 0)
+                .text(function (d) { return d.depth ? d.name.split(" ")[0] : ""; return ""; });
+            textEnter.append("tspan")
+                .attr("x", 0)
+                .attr("dy", "1em")
+                .text(function (d) { return d.depth ? d.name.split(" ")[1] || "" : ""; return ""; });
+
+            click(nodes[0]);
+
+            function click(d) {
+                min_x = 1;
+                max_x = 0;
+                nodes.forEach(function (m) {
+                    if (checkIfDisplay(d, m)) {
+                        if (m.x > max_x) max_x = m.x;
+                        if (m.x < min_x) min_x = m.x;
+                    }
+                })
+                boundary = (min_x + max_x) / 2;
+                curr_min_depth = d.depth;
+                path.transition()
+                  .duration(duration)
+                  .attrTween("d", arcTween(d));
+
+                sun_text.style("display", function (e) {
+                    if (checkIfDisplay(d, e)) return "block";
+                    return "none";
+                })
+                  .attr("text-anchor", "middle")
+                  .transition()
+                    .duration(duration)
+                    .attrTween("transform", function (e) {
+                        var multiline = (e.name || "").split(" ").length > 1;
+                        return function () {
+                            var angle = x(e.x + e.dx / 2) * 180 / Math.PI - 90,
+                                opt = angle > 0 && angle < 180 ? 180 : 0,
+                                rotate = angle + (multiline ? -.5 : 0);
+                            e.angle = angle;
+                            var second_rot = roundAngle(rotate).toFixed(0);
+
+                            if (!e.children && curr_min_depth < 6 && checkIfDisplay(d, e)) {
+                                second_rot = rotate > 270 || rotate < 90 ? 0 : 180;
+                                d3.select("#sun").selectAll("text").each(function (n) { if (n.value === e.value && n.depth == e.depth) d3.select(this).attr("text-anchor", (rotate > 270 || rotate < 90) ? "start" : "end") })
+                            }
+                            return "rotate(" + rotate + ")translate(" + (y(e.y + e.dy / 2)) + ")rotate(" + second_rot + ")";
+                        };
+                    });
+            }
+
+            function mouseover(d) {
+                // if (d.style("visibility") == 0) return;
+                if (debug) sun_ot.setContent(taxa_cats[d.depth] + ": " + d.name + "<br />Reads: " + d.value + "<br />x(d.x): " + ((d.x)).toFixed(2) + " x(d.dx): " + ((d.dx)).toFixed(2) + "<br />y(d.y): " + (d.y).toFixed(2) + "y(d.dy): " + (d.dy).toFixed(2) + "<br />text anchor: " + d3.select(this).attr("text-anchor") + "<br />rotate: " + d.rotate + "<br />depth " + d.depth);
+                if (d.parent.parent) sun_ot.setContent(taxa_cats[d.depth] + ": " + d.name + "<br />" + (100 * d.value / d.parent.value).toFixed(1) + "% of " + d.parent.name + " reads<br />" + (100 * d.value / nodes[0].value).toFixed(1) + "% of total reads");
+                else if (d.parent) sun_ot.setContent(taxa_cats[d.depth] + ": " + d.name + "<br />" + (100 * d.value / d.parent.value).toFixed(1) + "% of total reads");
+                return;
+            }
+
+            function mouseout(d) {
+                sun_ot.setContent("Total Reads: " + nodes[0].value);
+                sun_ot.hide();
+                return;
+            }
+        }
+    }
+
+    function isParentOf(p, c) {
+        if (p === c) return true;
+        if (p.children) {
+            return p.children.some(function (d) {
+                return isParentOf(d, c);
+            });
+        }
+        return false;
+    }
+
+    function checkIfDisplay(d, e) {
+        if (!isParentOf(d, e)) return 0;
+        if (e.value / d.value < threshold_list[e.depth]) return 0;
+        return 1;
+    }
+    function setChildColours(d) {
+        var coefs = diffArray(d.children.length);
+        var offset = global_color_offset;
+        var start = Math.min(360, (d.colour.h + (offset * (Math.round(d.children.length / 2) + 1))));
+        for (var i = 0; i < d.children.length; i++) {
+            var h = coefs[i] * offset + d.colour.h;
+            h = h % 360;
+            if (h < 0) h += 360;
+            d.children[i].colour = d3.hsl(h, global_saturation, global_lightness);
+            if (d.children[i].children) {
+                setChildColours(d.children[i]);
+            }
+        }
+    }
+    /**
+    function setChildColours(d) {
+      var offset = Math.max(3,d.children.length);
+      var start = Math.min(360, (d.colour.h + (offset * (Math.round(d.children.length/2) + 1))));
+      for(var i = 0; i < d.children.length; i++) {
+        d.children[i].colour = d3.hsl(Math.max(1,(start - i * offset)),global_saturation,global_lightness);
+        if(d.children[i].children) {
+          setChildColours(d.children[i]);
+        }
+      }
+    }
+    **/
+    function colour(d) {
+        if (!d.colour) d.colour = d3.hsl(50, global_saturation, global_lightness);
+        return d.colour.toString();
+    }
+
+    // Interpolate the scales!
+    function arcTween(d) {
+        var my = maxY(d),
+            xd = d3.interpolate(x.domain(), [d.x, d.x + d.dx]),
+            yd = d3.interpolate(y.domain(), [d.y, my]),
+            yr = d3.interpolate(y.range(), [d.y ? 20 : 0, radius]);
+        return function (d) {
+            return function (t) { x.domain(xd(t)); y.domain(yd(t)).range(yr(t)); return arc(d); };
+        };
+    }
+
+    function maxY(d) {
+        return d.children ? Math.max.apply(Math, d.children.map(maxY)) : d.y + d.dy;
+    }
+
+    // http://www.w3.org/WAI/ER/WD-AERT/#color-contrast
+    function brightness(rgb) {
+        return rgb.r * .299 + rgb.g * .587 + rgb.b * .114;
+    }
+
+    // return n HSL colors that are equally spaced
+    function getHSLs(n) {
+        var sep = Math.round(360 / n);
+        var ret = [];
+        for (var i = 0; i < n; i++) ret.push(i * sep);
+        return ret;
+    }
+
+    function ResetSunburst() { drawSun(); }
+
+    function roundAngle(angle) {
+        //return -angle
+        angle = angle % 360;
+        if (angle > 180 || angle < 0) return 90;
+        return 270;
+
+    }
+
+    function diffArray(n) {
+        var ret = new Array()
+        for (var i = -1 * (n / 2).toFixed(0) ; i <= (n / 2).toFixed(0) ; i++) {
+            if (i == 0) continue;
+            ret.push(i);
+        }
+        if (n % 2 != 0) ret.splice(0, 1);
+        return ret;
+    }
+
+    function drawClassifSummaryTable() {
+        tabulate(classif_json, ["level", "class", "unclass"]);
+        function tabulate(data, columns) {
+            var table = d3.select("#classifsummary").append("table"),
+                thead = table.append("thead"),
+                headers = ["Taxanomic Level", "% Reads Classified", "% Reads Unclassified"],
+                tbody = table.append("tbody");
+
+            // append the header row
+            thead.append("tr")
+                .selectAll("th")
+                .data(headers)
+                .enter()
+                .append("th")
+                    .text(function (d) { return d; });
+
+            // create a row for each object in the data
+            var rows = tbody.selectAll("tr")
+                .data(data)
+                .enter()
+                .append("tr");
+
+            // create a cell in each row for each column
+            var cells = rows.selectAll("td")
+                .data(function (row) {
+                    return columns.map(function (column) {
+                        return { column: column, value: row[column] };
+                    });
+                })
+                .enter()
+                .append("td")
+                    .text(function (d) { return d.value; });
+
+            return table;
+        }
+
+    }
+</script>
+</head>
+<style>
+
+    .opentip-container,
+.opentip-container * {
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box;
+  box-sizing: border-box;
+}
+.opentip-container {
+  position: absolute;
+  max-width: 300px;
+  z-index: 100;
+  -webkit-transition: -webkit-transform 1s ease-in-out;
+  -moz-transition: -moz-transform 1s ease-in-out;
+  -o-transition: -o-transform 1s ease-in-out;
+  -ms-transition: -ms-transform 1s ease-in-out;
+  transition: transform 1s ease-in-out;
+  pointer-events: none;
+  -webkit-transform: translateX(0) translateY(0);
+  -moz-transform: translateX(0) translateY(0);
+  -o-transform: translateX(0) translateY(0);
+  -ms-transform: translateX(0) translateY(0);
+  transform: translateX(0) translateY(0);
+}
+.opentip-container.ot-fixed.ot-hidden.stem-top.stem-center,
+.opentip-container.ot-fixed.ot-going-to-show.stem-top.stem-center,
+.opentip-container.ot-fixed.ot-hiding.stem-top.stem-center {
+  -webkit-transform: translateY(-5px);
+  -moz-transform: translateY(-5px);
+  -o-transform: translateY(-5px);
+  -ms-transform: translateY(-5px);
+  transform: translateY(-5px);
+}
+.opentip-container.ot-fixed.ot-hidden.stem-top.stem-right,
+.opentip-container.ot-fixed.ot-going-to-show.stem-top.stem-right,
+.opentip-container.ot-fixed.ot-hiding.stem-top.stem-right {
+  -webkit-transform: translateY(-5px) translateX(5px);
+  -moz-transform: translateY(-5px) translateX(5px);
+  -o-transform: translateY(-5px) translateX(5px);
+  -ms-transform: translateY(-5px) translateX(5px);
+  transform: translateY(-5px) translateX(5px);
+}
+.opentip-container.ot-fixed.ot-hidden.stem-middle.stem-right,
+.opentip-container.ot-fixed.ot-going-to-show.stem-middle.stem-right,
+.opentip-container.ot-fixed.ot-hiding.stem-middle.stem-right {
+  -webkit-transform: translateX(5px);
+  -moz-transform: translateX(5px);
+  -o-transform: translateX(5px);
+  -ms-transform: translateX(5px);
+  transform: translateX(5px);
+}
+.opentip-container.ot-fixed.ot-hidden.stem-bottom.stem-right,
+.opentip-container.ot-fixed.ot-going-to-show.stem-bottom.stem-right,
+.opentip-container.ot-fixed.ot-hiding.stem-bottom.stem-right {
+  -webkit-transform: translateY(5px) translateX(5px);
+  -moz-transform: translateY(5px) translateX(5px);
+  -o-transform: translateY(5px) translateX(5px);
+  -ms-transform: translateY(5px) translateX(5px);
+  transform: translateY(5px) translateX(5px);
+}
+.opentip-container.ot-fixed.ot-hidden.stem-bottom.stem-center,
+.opentip-container.ot-fixed.ot-going-to-show.stem-bottom.stem-center,
+.opentip-container.ot-fixed.ot-hiding.stem-bottom.stem-center {
+  -webkit-transform: translateY(5px);
+  -moz-transform: translateY(5px);
+  -o-transform: translateY(5px);
+  -ms-transform: translateY(5px);
+  transform: translateY(5px);
+}
+.opentip-container.ot-fixed.ot-hidden.stem-bottom.stem-left,
+.opentip-container.ot-fixed.ot-going-to-show.stem-bottom.stem-left,
+.opentip-container.ot-fixed.ot-hiding.stem-bottom.stem-left {
+  -webkit-transform: translateY(5px) translateX(-5px);
+  -moz-transform: translateY(5px) translateX(-5px);
+  -o-transform: translateY(5px) translateX(-5px);
+  -ms-transform: translateY(5px) translateX(-5px);
+  transform: translateY(5px) translateX(-5px);
+}
+.opentip-container.ot-fixed.ot-hidden.stem-middle.stem-left,
+.opentip-container.ot-fixed.ot-going-to-show.stem-middle.stem-left,
+.opentip-container.ot-fixed.ot-hiding.stem-middle.stem-left {
+  -webkit-transform: translateX(-5px);
+  -moz-transform: translateX(-5px);
+  -o-transform: translateX(-5px);
+  -ms-transform: translateX(-5px);
+  transform: translateX(-5px);
+}
+.opentip-container.ot-fixed.ot-hidden.stem-top.stem-left,
+.opentip-container.ot-fixed.ot-going-to-show.stem-top.stem-left,
+.opentip-container.ot-fixed.ot-hiding.stem-top.stem-left {
+  -webkit-transform: translateY(-5px) translateX(-5px);
+  -moz-transform: translateY(-5px) translateX(-5px);
+  -o-transform: translateY(-5px) translateX(-5px);
+  -ms-transform: translateY(-5px) translateX(-5px);
+  transform: translateY(-5px) translateX(-5px);
+}
+.opentip-container.ot-fixed .opentip {
+  pointer-events: auto;
+}
+.opentip-container.ot-hidden {
+  display: none;
+}
+.opentip-container .opentip {
+  position: relative;
+  font-size: 13px;
+  line-height: 120%;
+  padding: 9px 14px;
+  color: #4f4b47;
+  text-shadow: -1px -1px 0px rgba(255,255,255,0.2);
+}
+.opentip-container .opentip .header {
+  margin: 0;
+  padding: 0;
+}
+.opentip-container .opentip .ot-close {
+  pointer-events: auto;
+  display: block;
+  position: absolute;
+  top: -12px;
+  left: 60px;
+  color: rgba(0,0,0,0.5);
+  background: rgba(0,0,0,0);
+  text-decoration: none;
+}
+.opentip-container .opentip .ot-close span {
+  display: none;
+}
+.opentip-container .opentip .ot-loading-indicator {
+  display: none;
+}
+.opentip-container.ot-loading .ot-loading-indicator {
+  width: 30px;
+  height: 30px;
+  font-size: 30px;
+  line-height: 30px;
+  font-weight: bold;
+  display: block;
+}
+.opentip-container.ot-loading .ot-loading-indicator span {
+  display: block;
+  -webkit-animation: otloading 2s linear infinite;
+  -moz-animation: otloading 2s linear infinite;
+  -o-animation: otloading 2s linear infinite;
+  -ms-animation: otloading 2s linear infinite;
+  animation: otloading 2s linear infinite;
+  text-align: center;
+}
+.opentip-container.style-dark .opentip,
+.opentip-container.style-alert .opentip {
+  color: #f8f8f8;
+  text-shadow: 1px 1px 0px rgba(0,0,0,0.2);
+}
+.opentip-container.style-glass .opentip {
+  padding: 15px 25px;
+  color: #317cc5;
+  text-shadow: 1px 1px 8px rgba(0,94,153,0.3);
+}
+.opentip-container.ot-hide-effect-fade {
+  -webkit-transition: -webkit-transform 0.5s ease-in-out, opacity 1s ease-in-out;
+  -moz-transition: -moz-transform 0.5s ease-in-out, opacity 1s ease-in-out;
+  -o-transition: -o-transform 0.5s ease-in-out, opacity 1s ease-in-out;
+  -ms-transition: -ms-transform 0.5s ease-in-out, opacity 1s ease-in-out;
+  transition: transform 0.5s ease-in-out, opacity 1s ease-in-out;
+  opacity: 1;
+  -ms-filter: none;
+  filter: none;
+}
+.opentip-container.ot-hide-effect-fade.ot-hiding {
+  opacity: 0;
+  filter: alpha(opacity=0);
+  -ms-filter: "progid:DXImageTransform.Microsoft.Alpha(Opacity=0)";
+}
+.opentip-container.ot-show-effect-appear.ot-going-to-show,
+.opentip-container.ot-show-effect-appear.ot-showing {
+  -webkit-transition: -webkit-transform 0.5s ease-in-out, opacity 1s ease-in-out;
+  -moz-transition: -moz-transform 0.5s ease-in-out, opacity 1s ease-in-out;
+  -o-transition: -o-transform 0.5s ease-in-out, opacity 1s ease-in-out;
+  -ms-transition: -ms-transform 0.5s ease-in-out, opacity 1s ease-in-out;
+  transition: transform 0.5s ease-in-out, opacity 1s ease-in-out;
+}
+.opentip-container.ot-show-effect-appear.ot-going-to-show {
+  opacity: 0;
+  filter: alpha(opacity=0);
+  -ms-filter: "progid:DXImageTransform.Microsoft.Alpha(Opacity=0)";
+}
+.opentip-container.ot-show-effect-appear.ot-showing {
+  opacity: 1;
+  -ms-filter: none;
+  filter: none;
+}
+.opentip-container.ot-show-effect-appear.ot-visible {
+  opacity: 1;
+  -ms-filter: none;
+  filter: none;
+}
+@-moz-keyframes otloading {
+  0% {
+    -webkit-transform: rotate(0deg);
+    -moz-transform: rotate(0deg);
+    -o-transform: rotate(0deg);
+    -ms-transform: rotate(0deg);
+    transform: rotate(0deg);
+  }
+
+  100% {
+    -webkit-transform: rotate(360deg);
+    -moz-transform: rotate(360deg);
+    -o-transform: rotate(360deg);
+    -ms-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
+}
+@-webkit-keyframes otloading {
+  0% {
+    -webkit-transform: rotate(0deg);
+    -moz-transform: rotate(0deg);
+    -o-transform: rotate(0deg);
+    -ms-transform: rotate(0deg);
+    transform: rotate(0deg);
+  }
+
+  100% {
+    -webkit-transform: rotate(360deg);
+    -moz-transform: rotate(360deg);
+    -o-transform: rotate(360deg);
+    -ms-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
+}
+@-o-keyframes otloading {
+  0% {
+    -webkit-transform: rotate(0deg);
+    -moz-transform: rotate(0deg);
+    -o-transform: rotate(0deg);
+    -ms-transform: rotate(0deg);
+    transform: rotate(0deg);
+  }
+
+  100% {
+    -webkit-transform: rotate(360deg);
+    -moz-transform: rotate(360deg);
+    -o-transform: rotate(360deg);
+    -ms-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
+}
+@-ms-keyframes otloading {
+  0% {
+    -webkit-transform: rotate(0deg);
+    -moz-transform: rotate(0deg);
+    -o-transform: rotate(0deg);
+    -ms-transform: rotate(0deg);
+    transform: rotate(0deg);
+  }
+
+  100% {
+    -webkit-transform: rotate(360deg);
+    -moz-transform: rotate(360deg);
+    -o-transform: rotate(360deg);
+    -ms-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
+}
+@keyframes otloading {
+  0% {
+    -webkit-transform: rotate(0deg);
+    -moz-transform: rotate(0deg);
+    -o-transform: rotate(0deg);
+    -ms-transform: rotate(0deg);
+    transform: rotate(0deg);
+  }
+
+  100% {
+    -webkit-transform: rotate(360deg);
+    -moz-transform: rotate(360deg);
+    -o-transform: rotate(360deg);
+    -ms-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
+}
+
+
+body {
+  font-family: 'Helvetica Neue',Helvetica,Arial,sans-serif;
+  font-size: 12px;
+  width: 880px;
+  margin: 0 auto;
+}
+
+.axis path,
+.axis line {
+  fill: none;
+  stroke: #000;
+  shape-rendering: crispEdges;
+}
+
+path {
+  stroke: #000;
+  stroke-width: 1;
+  cursor: pointer;
+}
+
+
+h1 {
+  font-family: 'Helvetica Neue',Helvetica,Arial,sans-serif;
+	font-size: 18px;
+	font-weight: 200;
+  	text-align: center;
+  	top:0px;
+  	/*text-decoration:underline;*/
+
+}
+
+p#intro {
+  	text-align: center;
+  	margin: 0;
+}
+body,html{height: 100%;}
+body {
+	background-color:#E8E8E8;
+}
+#title {
+	font-family: 'Helvetica Neue',Helvetica,Arial,sans-serif;
+  font-size: 20px;
+	font-weight: 200;
+  	text-align: center;
+  	width: auto;
+  	margin-left: auto;
+  	margin-right: auto;
+    margin-bottom: 30px;
+  	text-decoration:underline;
+  	position: relative;
+  	top: 30px;
+}
+
+#footer {
+  font: 12px arial;
+  font-weight: 600;
+    text-align: center;
+    width: auto;
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom: 30px;
+    position: relative;
+    top: 30px;
+}
+
+#charts {
+	text-align: center;
+    width: auto;
+    height: auto;
+    position:relative;
+    top:50px;
+    margin-bottom: 50px;
+    background-color: #FAFAFA;
+    display: inline-block;
+}
+
+#sun {
+	font: 13px arial;
+  	font-weight: 600;
+  	cursor: pointer;
+	margin-left: auto;
+	margin-right: auto;
+	margin-bottom: 20px;
+  height:100%;
+	/*position: relative;*/
+}
+
+    #classifsummary {
+      position: relative;
+      font-family: Sans-Serif;
+      font-size:12px;
+      width:450px;
+      text-align: center;
+      margin-left: auto;
+      margin-right: auto;
+      margin-bottom: 40px;
+      margin-top: 40px;
+      height:100%;
+
+      border:1px solid #69c;
+      }
+    #classifsummary th{
+      font-weight:normal;
+      font-size:14px;
+      color:#039;
+      border-bottom:1px dashed #69c;
+      padding:12px 17px;
+      }
+    #classifsummary td{
+      color:#669;
+      padding:7px 17px;
+    }
+    #classifsummary tbody tr:hover td{
+      color:#339;
+      background:#d0dafd;
+    }
+
+#button {
+	position: relative;
+	font: 12px arial;
+  	font-weight: 300;
+  	cursor: pointer;
+	margin-left: 0;
+	margin-right: 0;
+
+}
+
+#bar {
+	font: 12px arial;
+  	font-weight: 300;
+  	cursor: pointer;
+	margin-left: auto;
+	margin-right: auto;
+	width: auto;
+  margin-bottom: 80px;
+  height:100%;
+}
+
+.x.axis path {
+  display: none;
+}
+
+.legend line {
+  stroke: #000;
+  shape-rendering: crispEdges;
+}
+
+</style>
+
+<body><br /><center><img src="data:image/png;base64,
+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" alt="Illumina Logo" width="350px" /><br /><br /><br /><h1>16S Metagenomics Report</h1><br /><h2>Sample: Human_Plaque_Calibration_R1</h2><h3><br />Analysis software version: 2.4.32.0<br /><br />Analysis Date: 8/7/2013 8:21:50 AM</h3><br /></center><hr />
+
+
+
+<div id="charts">
+
+	<h1>Sunburst Chart</h1>
+	<button onclick="ResetSunburst()">Reset Plot</button>
+	<div id="sun"></div>
+
+	<h1>Top 20 Classifications by Taxanomic Level</h1>
+	<div id="bar"></div>
+
+  <h1>Classification Efficency by Taxanomic Level</h1>
+  <div id="classifsummary"></div>
+
+</div>
+
+<div id="footer">&copy; Illumina 2013</div>
+
+<script>var col_json =
+[
+{"Bacteria" : [787528], "Unclassified" : [44986]},
+{"Firmicutes" : ["Bacteria", 245810], "Bacteroidetes" : ["Bacteria", 209934], "Proteobacteria" : ["Bacteria", 134775], "Fusobacteria" : ["Bacteria", 121578], "Actinobacteria" : ["Bacteria", 47726], "Spirochaetes" : ["Bacteria", 17616], "Unclassified Bacteria" : ["Bacteria", 6228], "Synergistetes" : ["Bacteria", 2828], "Verrucomicrobia" : ["Bacteria", 1033]},
+{"Bacteroidia" : ["Bacteria", "Bacteroidetes", 173072], "Clostridia" : ["Bacteria", "Firmicutes", 122894], "Fusobacteria" : ["Bacteria", "Fusobacteria", 121578], "Bacilli" : ["Bacteria", "Firmicutes", 121074], "Betaproteobacteria" : ["Bacteria", "Proteobacteria", 62037], "Gammaproteobacteria" : ["Bacteria", "Proteobacteria", 49354], "Actinobacteria" : ["Bacteria", "Actinobacteria", 47726], "Flavobacteriia" : ["Bacteria", "Bacteroidetes", 34260], "Epsilonproteobacteria" : ["Bacteria", "Proteobacteria", 21991], "Spirochaetes" : ["Bacteria", "Spirochaetes", 17616], "Synergistia" : ["Bacteria", "Synergistetes", 2828], "Sphingobacteriia" : ["Bacteria", "Bacteroidetes", 1554], "Unclassified Proteobacteria" : ["Bacteria", "Proteobacteria", 1393], "Unclassified Bacteroidetes" : ["Bacteria", "Bacteroidetes", 1048], "Opitutae" : ["Bacteria", "Verrucomicrobia", 1033], "Unclassified Firmicutes" : ["Bacteria", "Firmicutes", 969], "Erysipelotrichi" : ["Bacteria", "Firmicutes", 873]},
+{"Bacteroidales" : ["Bacteria", "Bacteroidetes", "Bacteroidia", 173072], "Fusobacteriales" : ["Bacteria", "Fusobacteria", "Fusobacteria", 121578], "Clostridiales" : ["Bacteria", "Firmicutes", "Clostridia", 119970], "Lactobacillales" : ["Bacteria", "Firmicutes", "Bacilli", 108013], "Neisseriales" : ["Bacteria", "Proteobacteria", "Betaproteobacteria", 58599], "Actinomycetales" : ["Bacteria", "Actinobacteria", "Actinobacteria", 47098], "Pasteurellales" : ["Bacteria", "Proteobacteria", "Gammaproteobacteria", 36614], "Flavobacteriales" : ["Bacteria", "Bacteroidetes", "Flavobacteriia", 34260], "Campylobacterales" : ["Bacteria", "Proteobacteria", "Epsilonproteobacteria", 21991], "Spirochaetales" : ["Bacteria", "Spirochaetes", "Spirochaetes", 17616], "Gemellales" : ["Bacteria", "Firmicutes", "Bacilli", 9306], "Cardiobacteriales" : ["Bacteria", "Proteobacteria", "Gammaproteobacteria", 7366], "Enterobacteriales" : ["Bacteria", "Proteobacteria", "Gammaproteobacteria", 5374], "Bacillales" : ["Bacteria", "Firmicutes", "Bacilli", 3755], "Coriobacteriales" : ["Bacteria", "Firmicutes", "Clostridia", 2924], "Burkholderiales" : ["Bacteria", "Proteobacteria", "Betaproteobacteria", 2896], "Synergistales" : ["Bacteria", "Synergistetes", "Synergistia", 2828], "Sphingobacteriales" : ["Bacteria", "Bacteroidetes", "Sphingobacteriia", 1554], "Pelagicoccales" : ["Bacteria", "Verrucomicrobia", "Opitutae", 1033], "Erysipelotrichales" : ["Bacteria", "Firmicutes", "Erysipelotrichi", 873]},
+{"Veillonellaceae" : ["Bacteria", "Firmicutes", "Clostridia", "Clostridiales", 96021], "Streptococcaceae" : ["Bacteria", "Firmicutes", "Bacilli", "Lactobacillales", 89780], "Fusobacteriaceae" : ["Bacteria", "Fusobacteria", "Fusobacteria", "Fusobacteriales", 86983], "Prevotellaceae" : ["Bacteria", "Bacteroidetes", "Bacteroidia", "Bacteroidales", 83108], "Porphyromonadaceae" : ["Bacteria", "Bacteroidetes", "Bacteroidia", "Bacteroidales", 70550], "Neisseriaceae" : ["Bacteria", "Proteobacteria", "Betaproteobacteria", "Neisseriales", 58599], "Pasteurellaceae" : ["Bacteria", "Proteobacteria", "Gammaproteobacteria", "Pasteurellales", 36614], "Leptotrichiaceae" : ["Bacteria", "Fusobacteria", "Fusobacteria", "Fusobacteriales", 34595], "Flavobacteriaceae" : ["Bacteria", "Bacteroidetes", "Flavobacteriia", "Flavobacteriales", 34260], "Campylobacteraceae" : ["Bacteria", "Proteobacteria", "Epsilonproteobacteria", "Campylobacterales", 21991], "Spirochaetaceae" : ["Bacteria", "Spirochaetes", "Spirochaetes", "Spirochaetales", 17616], "Corynebacteriaceae" : ["Bacteria", "Actinobacteria", "Actinobacteria", "Actinomycetales", 17462], "Paraprevotellaceae" : ["Bacteria", "Bacteroidetes", "Bacteroidia", "Bacteroidales", 17105], "Actinomycetaceae" : ["Bacteria", "Actinobacteria", "Actinobacteria", "Actinomycetales", 16702], "Lachnospiraceae" : ["Bacteria", "Firmicutes", "Clostridia", "Clostridiales", 13592], "Leuconostocaceae" : ["Bacteria", "Firmicutes", "Bacilli", "Lactobacillales", 11653], "Micrococcaceae" : ["Bacteria", "Actinobacteria", "Actinobacteria", "Actinomycetales", 10448], "Gemellaceae" : ["Bacteria", "Firmicutes", "Bacilli", "Gemellales", 9306], "Cardiobacteriaceae" : ["Bacteria", "Proteobacteria", "Gammaproteobacteria", "Cardiobacteriales", 7366], "Enterobacteriaceae" : ["Bacteria", "Proteobacteria", "Gammaproteobacteria", "Enterobacteriales", 5374]},
+{"Prevotella" : ["Bacteria", "Bacteroidetes", "Bacteroidia", "Bacteroidales", "Prevotellaceae", 100213], "Streptococcus" : ["Bacteria", "Firmicutes", "Bacilli", "Lactobacillales", "Streptococcaceae", 89240], "Fusobacterium" : ["Bacteria", "Fusobacteria", "Fusobacteria", "Fusobacteriales", "Fusobacteriaceae", 86983], "Veillonella" : ["Bacteria", "Firmicutes", "Clostridia", "Clostridiales", "Veillonellaceae", 66789], "Porphyromonas" : ["Bacteria", "Bacteroidetes", "Bacteroidia", "Bacteroidales", "Porphyromonadaceae", 59684], "Neisseria" : ["Bacteria", "Proteobacteria", "Betaproteobacteria", "Neisseriales", "Neisseriaceae", 51248], "Leptotrichia" : ["Bacteria", "Fusobacteria", "Fusobacteria", "Fusobacteriales", "Leptotrichiaceae", 34595], "Capnocytophaga" : ["Bacteria", "Bacteroidetes", "Flavobacteriia", "Flavobacteriales", "Flavobacteriaceae", 28821], "Selenomonas" : ["Bacteria", "Firmicutes", "Clostridia", "Clostridiales", "Veillonellaceae", 24213], "Campylobacter" : ["Bacteria", "Proteobacteria", "Epsilonproteobacteria", "Campylobacterales", "Campylobacteraceae", 21991], "Treponema" : ["Bacteria", "Spirochaetes", "Spirochaetes", "Spirochaetales", "Spirochaetaceae", 17616], "Corynebacterium" : ["Bacteria", "Actinobacteria", "Actinobacteria", "Actinomycetales", "Corynebacteriaceae", 17462], "Haemophilus" : ["Bacteria", "Proteobacteria", "Gammaproteobacteria", "Pasteurellales", "Pasteurellaceae", 16999], "Aggregatibacter" : ["Bacteria", "Proteobacteria", "Gammaproteobacteria", "Pasteurellales", "Pasteurellaceae", 14561], "Parascardovia" : ["Bacteria", "Actinobacteria", "Actinobacteria", "Actinomycetales", "Actinomycetaceae", 13385], "Leuconostoc" : ["Bacteria", "Firmicutes", "Bacilli", "Lactobacillales", "Leuconostocaceae", 11653], "Rothia" : ["Bacteria", "Actinobacteria", "Actinobacteria", "Actinomycetales", "Micrococcaceae", 10448], "Gemella" : ["Bacteria", "Firmicutes", "Bacilli", "Gemellales", "Gemellaceae", 9306], "Tannerella" : ["Bacteria", "Bacteroidetes", "Bacteroidia", "Bacteroidales", "Porphyromonadaceae", 7555], "Cardiobacterium" : ["Bacteria", "Proteobacteria", "Gammaproteobacteria", "Cardiobacteriales", "Cardiobacteriaceae", 7366]},
+{"Unclassified Fusobacterium" : ["Bacteria", "Fusobacteria", "Fusobacteria", "Fusobacteriales", "Fusobacteriaceae", "Fusobacterium", 40044], "Unclassified Streptococcus" : ["Bacteria", "Firmicutes", "Bacilli", "Lactobacillales", "Streptococcaceae", "Streptococcus", 34758], "Unclassified Porphyromonas" : ["Bacteria", "Bacteroidetes", "Bacteroidia", "Bacteroidales", "Porphyromonadaceae", "Porphyromonas", 33372], "Unclassified Neisseria" : ["Bacteria", "Proteobacteria", "Betaproteobacteria", "Neisseriales", "Neisseriaceae", "Neisseria", 31641], "nucleatum" : ["Bacteria", "Fusobacteria", "Fusobacteria", "Fusobacteriales", "Fusobacteriaceae", "Fusobacterium", 30580], "parvula" : ["Bacteria", "Firmicutes", "Clostridia", "Clostridiales", "Veillonellaceae", "Veillonella", 25207], "dispar" : ["Bacteria", "Firmicutes", "Clostridia", "Clostridiales", "Veillonellaceae", "Veillonella", 22817], "Unclassified Prevotella" : ["Bacteria", "Bacteroidetes", "Bacteroidia", "Bacteroidales", "Prevotellaceae", "Prevotella", 20382], "pseudopneumoniae" : ["Bacteria", "Firmicutes", "Bacilli", "Lactobacillales", "Streptococcaceae", "Streptococcus", 18620], "nigrescens" : ["Bacteria", "Bacteroidetes", "Bacteroidia", "Bacteroidales", "Prevotellaceae", "Prevotella", 18276], "Unclassified Capnocytophaga" : ["Bacteria", "Bacteroidetes", "Flavobacteriia", "Flavobacteriales", "Flavobacteriaceae", "Capnocytophaga", 18044], "Unclassified Leptotrichia" : ["Bacteria", "Fusobacteria", "Fusobacteria", "Fusobacteriales", "Leptotrichiaceae", "Leptotrichia", 17090], "parainfluenzae" : ["Bacteria", "Proteobacteria", "Gammaproteobacteria", "Pasteurellales", "Pasteurellaceae", "Haemophilus", 16470], "matruchotii" : ["Bacteria", "Actinobacteria", "Actinobacteria", "Actinomycetales", "Corynebacteriaceae", "Corynebacterium", 14967], "Unclassified Parascardovia" : ["Bacteria", "Actinobacteria", "Actinobacteria", "Actinomycetales", "Actinomycetaceae", "Parascardovia", 13385], "loescheii" : ["Bacteria", "Bacteroidetes", "Bacteroidia", "Bacteroidales", "Prevotellaceae", "Prevotella", 12740], "gingivalis" : ["Bacteria", "Bacteroidetes", "Bacteroidia", "Bacteroidales", "Porphyromonadaceae", "Porphyromonas", 12419], "Unclassified Leuconostoc" : ["Bacteria", "Firmicutes", "Bacilli", "Lactobacillales", "Leuconostocaceae", "Leuconostoc", 11653], "segnis" : ["Bacteria", "Proteobacteria", "Gammaproteobacteria", "Pasteurellales", "Pasteurellaceae", "Aggregatibacter", 11618], "naviforme" : ["Bacteria", "Fusobacteria", "Fusobacteria", "Fusobacteriales", "Fusobacteriaceae", "Fusobacterium", 11479]}
+]
+;
+var sun_json =
+[
+  {"name": "Unclassified", "size": 44986},
+  {
+   "name": "Bacteria",
+   "children": [
+    {
+     "name": "Fusobacteria",
+     "children": [
+      {
+       "name": "Fusobacteria",
+       "children": [
+        {
+         "name": "Fusobacteriales",
+         "children": [
+          {
+           "name": "Fusobacteriaceae",
+           "children": [
+            {
+             "name": "Fusobacterium",
+             "children": [
+              {"name": "Unclassified Fusobacterium", "size": 40044},
+              {"name": "nucleatum", "size": 30580},
+              {"name": "naviforme", "size": 11479},
+              {"name": "periodonticum", "size": 3452},
+              {"name": "canifelinum", "size": 723},
+              {"name": "simiae", "size": 705}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Leptotrichiaceae",
+           "children": [
+            {
+             "name": "Leptotrichia",
+             "children": [
+              {"name": "Unclassified Leptotrichia", "size": 17090},
+              {"name": "hofstadii", "size": 5791},
+              {"name": "shahii", "size": 4050},
+              {"name": "buccalis", "size": 3692},
+              {"name": "wadei", "size": 2754},
+              {"name": "trevisanii", "size": 1218}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Firmicutes",
+     "children": [
+      {
+       "name": "Bacilli",
+       "children": [
+        {
+         "name": "Lactobacillales",
+         "children": [
+          {
+           "name": "Streptococcaceae",
+           "children": [
+            {
+             "name": "Streptococcus",
+             "children": [
+              {"name": "Unclassified Streptococcus", "size": 34758},
+              {"name": "pseudopneumoniae", "size": 18620},
+              {"name": "tigurinus", "size": 10422},
+              {"name": "infantis", "size": 8037},
+              {"name": "gordonii", "size": 6143},
+              {"name": "sanguinis", "size": 4196},
+              {"name": "cristatus", "size": 2120},
+              {"name": "intermedius", "size": 1724},
+              {"name": "oralis", "size": 1522},
+              {"name": "anginosus", "size": 1076},
+              {"name": "milleri", "size": 622}
+             ]
+            },
+            {
+             "name": "Unclassified Streptococcaceae",
+             "children": [
+              {"name": "Unclassified Streptococcaceae", "size": 540}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Leuconostocaceae",
+           "children": [
+            {
+             "name": "Leuconostoc",
+             "children": [
+              {"name": "Unclassified Leuconostoc", "size": 11653}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Carnobacteriaceae",
+           "children": [
+            {
+             "name": "Granulicatella",
+             "children": [
+              {"name": "adiacens", "size": 3081},
+              {"name": "Unclassified Granulicatella", "size": 1534}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Aerococcaceae",
+           "children": [
+            {
+             "name": "Abiotrophia",
+             "children": [
+              {"name": "Unclassified Abiotrophia", "size": 812},
+              {"name": "defectiva", "size": 525}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Unclassified Lactobacillales",
+           "children": [
+            {
+             "name": "Unclassified Lactobacillales",
+             "children": [
+              {"name": "Unclassified Lactobacillales", "size": 628}
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "name": "Gemellales",
+         "children": [
+          {
+           "name": "Gemellaceae",
+           "children": [
+            {
+             "name": "Gemella",
+             "children": [
+              {"name": "Unclassified Gemella", "size": 6533},
+              {"name": "cunicula", "size": 1812},
+              {"name": "sanguinis", "size": 961}
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "name": "Bacillales",
+         "children": [
+          {
+           "name": "Paenibacillaceae",
+           "children": [
+            {
+             "name": "Cohnella",
+             "children": [
+              {"name": "Unclassified Cohnella", "size": 3755}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "name": "Clostridia",
+       "children": [
+        {
+         "name": "Clostridiales",
+         "children": [
+          {
+           "name": "Veillonellaceae",
+           "children": [
+            {
+             "name": "Veillonella",
+             "children": [
+              {"name": "parvula", "size": 25207},
+              {"name": "dispar", "size": 22817},
+              {"name": "atypica", "size": 9210},
+              {"name": "Unclassified Veillonella", "size": 5391},
+              {"name": "denticariosi", "size": 2315},
+              {"name": "montpellierensis", "size": 1849}
+             ]
+            },
+            {
+             "name": "Selenomonas",
+             "children": [
+              {"name": "noxia", "size": 8966},
+              {"name": "Unclassified Selenomonas", "size": 6786},
+              {"name": "infelix", "size": 4731},
+              {"name": "artemidis", "size": 3730}
+             ]
+            },
+            {
+             "name": "Dialister",
+             "children": [
+              {"name": "invisus", "size": 4417}
+             ]
+            },
+            {
+             "name": "Unclassified Veillonellaceae",
+             "children": [
+              {"name": "Unclassified Veillonellaceae", "size": 602}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Lachnospiraceae",
+           "children": [
+            {
+             "name": "Butyrivibrio",
+             "children": [
+              {"name": "proteoclasticus", "size": 6929}
+             ]
+            },
+            {
+             "name": "Johnsonella",
+             "children": [
+              {"name": "ignava", "size": 3102}
+             ]
+            },
+            {
+             "name": "Catonella",
+             "children": [
+              {"name": "Unclassified Catonella", "size": 1430}
+             ]
+            },
+            {
+             "name": "Oribacterium",
+             "children": [
+              {"name": "Unclassified Oribacterium", "size": 1318}
+             ]
+            },
+            {
+             "name": "Moryella",
+             "children": [
+              {"name": "Unclassified Moryella", "size": 813}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Clostridiaceae",
+           "children": [
+            {
+             "name": "Alkaliphilus",
+             "children": [
+              {"name": "crotonatoxidans", "size": 2323}
+             ]
+            },
+            {
+             "name": "Clostridium",
+             "children": [
+              {"name": "cadaveris", "size": 812},
+              {"name": "Unclassified Clostridium", "size": 766}
+             ]
+            },
+            {
+             "name": "Mogibacterium",
+             "children": [
+              {"name": "timidum", "size": 599}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Unclassified Clostridiales",
+           "children": [
+            {
+             "name": "Unclassified Clostridiales",
+             "children": [
+              {"name": "Unclassified Clostridiales", "size": 2212}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Peptostreptococcaceae",
+           "children": [
+            {
+             "name": "Filifactor",
+             "children": [
+              {"name": "villosus", "size": 1654},
+              {"name": "alocis", "size": 1100}
+             ]
+            },
+            {
+             "name": "Peptostreptococcus",
+             "children": [
+              {"name": "stomatis", "size": 891}
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "name": "Coriobacteriales",
+         "children": [
+          {
+           "name": "Coriobacteriaceae",
+           "children": [
+            {
+             "name": "Atopobium",
+             "children": [
+              {"name": "rimae", "size": 1545},
+              {"name": "parvulum", "size": 1379}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "name": "Unclassified Firmicutes",
+       "children": [
+        {
+         "name": "Unclassified Firmicutes",
+         "children": [
+          {
+           "name": "Unclassified Firmicutes",
+           "children": [
+            {
+             "name": "Unclassified Firmicutes",
+             "children": [
+              {"name": "Unclassified Firmicutes", "size": 969}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "name": "Erysipelotrichi",
+       "children": [
+        {
+         "name": "Erysipelotrichales",
+         "children": [
+          {
+           "name": "Erysipelotrichaceae",
+           "children": [
+            {
+             "name": "Bulleidia",
+             "children": [
+              {"name": "moorei", "size": 873}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Bacteroidetes",
+     "children": [
+      {
+       "name": "Bacteroidia",
+       "children": [
+        {
+         "name": "Bacteroidales",
+         "children": [
+          {
+           "name": "Porphyromonadaceae",
+           "children": [
+            {
+             "name": "Porphyromonas",
+             "children": [
+              {"name": "Unclassified Porphyromonas", "size": 33372},
+              {"name": "gingivalis", "size": 9735},
+              {"name": "catoniae", "size": 8614},
+              {"name": "endodontalis", "size": 7127},
+              {"name": "canis", "size": 836}
+             ]
+            },
+            {
+             "name": "Tannerella",
+             "children": [
+              {"name": "Unclassified Tannerella", "size": 7555}
+             ]
+            },
+            {
+             "name": "Dysgonomonas",
+             "children": [
+              {"name": "wimpennyi", "size": 3311}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Prevotellaceae",
+           "children": [
+            {
+             "name": "Prevotella",
+             "children": [
+              {"name": "nigrescens", "size": 18276},
+              {"name": "Unclassified Prevotella", "size": 14209},
+              {"name": "loescheii", "size": 12740},
+              {"name": "melaninogenica", "size": 8070},
+              {"name": "intermedia", "size": 6746},
+              {"name": "oris", "size": 6587},
+              {"name": "multiformis", "size": 3358},
+              {"name": "pleuritidis", "size": 2913},
+              {"name": "oulorum", "size": 2426},
+              {"name": "maculosa", "size": 1789},
+              {"name": "veroralis", "size": 1543},
+              {"name": "micans", "size": 1006},
+              {"name": "oralis", "size": 839},
+              {"name": "dentasini", "size": 763},
+              {"name": "nanceiensis", "size": 640},
+              {"name": "saccharolytica", "size": 628},
+              {"name": "salivae", "size": 575}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Paraprevotellaceae",
+           "children": [
+            {
+             "name": "Prevotella",
+             "children": [
+              {"name": "tannerae", "size": 10932},
+              {"name": "Unclassified Prevotella", "size": 6173}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Bacteroidaceae",
+           "children": [
+            {
+             "name": "Bacteroides",
+             "children": [
+              {"name": "Unclassified Bacteroides", "size": 813},
+              {"name": "denticanum", "size": 688}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Unclassified Bacteroidales",
+           "children": [
+            {
+             "name": "Unclassified Bacteroidales",
+             "children": [
+              {"name": "Unclassified Bacteroidales", "size": 808}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "name": "Flavobacteriia",
+       "children": [
+        {
+         "name": "Flavobacteriales",
+         "children": [
+          {
+           "name": "Flavobacteriaceae",
+           "children": [
+            {
+             "name": "Capnocytophaga",
+             "children": [
+              {"name": "Unclassified Capnocytophaga", "size": 18044},
+              {"name": "ochracea", "size": 6311},
+              {"name": "gingivalis", "size": 2684},
+              {"name": "leadbetteri", "size": 1154},
+              {"name": "granulosa", "size": 628}
+             ]
+            },
+            {
+             "name": "Chryseobacterium",
+             "children": [
+              {"name": "Unclassified Chryseobacterium", "size": 1406},
+              {"name": "taichungense", "size": 1364}
+             ]
+            },
+            {
+             "name": "Flavobacterium",
+             "children": [
+              {"name": "Unclassified Flavobacterium", "size": 1174}
+             ]
+            },
+            {
+             "name": "Unclassified Flavobacteriaceae",
+             "children": [
+              {"name": "Unclassified Flavobacteriaceae", "size": 838}
+             ]
+            },
+            {
+             "name": "Zhouia",
+             "children": [
+              {"name": "amylolytica", "size": 657}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "name": "Sphingobacteriia",
+       "children": [
+        {
+         "name": "Sphingobacteriales",
+         "children": [
+          {
+           "name": "Sphingobacteriaceae",
+           "children": [
+            {
+             "name": "Sphingobacterium",
+             "children": [
+              {"name": "bambusae", "size": 1554}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "name": "Unclassified Bacteroidetes",
+       "children": [
+        {
+         "name": "Unclassified Bacteroidetes",
+         "children": [
+          {
+           "name": "Unclassified Bacteroidetes",
+           "children": [
+            {
+             "name": "Unclassified Bacteroidetes",
+             "children": [
+              {"name": "Unclassified Bacteroidetes", "size": 1048}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Proteobacteria",
+     "children": [
+      {
+       "name": "Betaproteobacteria",
+       "children": [
+        {
+         "name": "Neisseriales",
+         "children": [
+          {
+           "name": "Neisseriaceae",
+           "children": [
+            {
+             "name": "Neisseria",
+             "children": [
+              {"name": "Unclassified Neisseria", "size": 31641},
+              {"name": "mucosa", "size": 9733},
+              {"name": "lactamica", "size": 5121},
+              {"name": "elongata", "size": 3193},
+              {"name": "flavescens", "size": 994},
+              {"name": "cinerea", "size": 566}
+             ]
+            },
+            {
+             "name": "Kingella",
+             "children": [
+              {"name": "oralis", "size": 3020}
+             ]
+            },
+            {
+             "name": "Conchiformibius",
+             "children": [
+              {"name": "kuhniae", "size": 2222}
+             ]
+            },
+            {
+             "name": "Unclassified Neisseriaceae",
+             "children": [
+              {"name": "Unclassified Neisseriaceae", "size": 1132}
+             ]
+            },
+            {
+             "name": "Eikenella",
+             "children": [
+              {"name": "corrodens", "size": 977}
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "name": "Burkholderiales",
+         "children": [
+          {
+           "name": "Comamonadaceae",
+           "children": [
+            {
+             "name": "Unclassified Comamonadaceae",
+             "children": [
+              {"name": "Unclassified Comamonadaceae", "size": 1048}
+             ]
+            },
+            {
+             "name": "Hylemonella",
+             "children": [
+              {"name": "Unclassified Hylemonella", "size": 746}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Burkholderiaceae",
+           "children": [
+            {
+             "name": "Lautropia",
+             "children": [
+              {"name": "mirabilis", "size": 552},
+              {"name": "Unclassified Lautropia", "size": 550}
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "name": "Unclassified Betaproteobacteria",
+         "children": [
+          {
+           "name": "Unclassified Betaproteobacteria",
+           "children": [
+            {
+             "name": "Unclassified Betaproteobacteria",
+             "children": [
+              {"name": "Unclassified Betaproteobacteria", "size": 542}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "name": "Gammaproteobacteria",
+       "children": [
+        {
+         "name": "Pasteurellales",
+         "children": [
+          {
+           "name": "Pasteurellaceae",
+           "children": [
+            {
+             "name": "Haemophilus",
+             "children": [
+              {"name": "parainfluenzae", "size": 16470},
+              {"name": "Unclassified Haemophilus", "size": 529}
+             ]
+            },
+            {
+             "name": "Aggregatibacter",
+             "children": [
+              {"name": "segnis", "size": 11618},
+              {"name": "Unclassified Aggregatibacter", "size": 1683},
+              {"name": "aphrophilus", "size": 1260}
+             ]
+            },
+            {
+             "name": "Mannheimia",
+             "children": [
+              {"name": "caviae", "size": 2334}
+             ]
+            },
+            {
+             "name": "Unclassified Pasteurellaceae",
+             "children": [
+              {"name": "Unclassified Pasteurellaceae", "size": 1576}
+             ]
+            },
+            {
+             "name": "Actinobacillus",
+             "children": [
+              {"name": "porcinus", "size": 600}
+             ]
+            },
+            {
+             "name": "Chelonobacter",
+             "children": [
+              {"name": "oris", "size": 544}
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "name": "Enterobacteriales",
+         "children": [
+          {
+           "name": "Enterobacteriaceae",
+           "children": [
+            {
+             "name": "Candidatus Blochmannia",
+             "children": [
+              {"name": "rufipes", "size": 5374}
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "name": "Cardiobacteriales",
+         "children": [
+          {
+           "name": "Cardiobacteriaceae",
+           "children": [
+            {
+             "name": "Cardiobacterium",
+             "children": [
+              {"name": "hominis", "size": 2741},
+              {"name": "Unclassified Cardiobacterium", "size": 2660},
+              {"name": "valvarum", "size": 1965}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "name": "Epsilonproteobacteria",
+       "children": [
+        {
+         "name": "Campylobacterales",
+         "children": [
+          {
+           "name": "Campylobacteraceae",
+           "children": [
+            {
+             "name": "Campylobacter",
+             "children": [
+              {"name": "gracilis", "size": 8132},
+              {"name": "Unclassified Campylobacter", "size": 6764},
+              {"name": "showae", "size": 4368},
+              {"name": "concisus", "size": 2171},
+              {"name": "curvus", "size": 556}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "name": "Unclassified Proteobacteria",
+       "children": [
+        {
+         "name": "Unclassified Proteobacteria",
+         "children": [
+          {
+           "name": "Unclassified Proteobacteria",
+           "children": [
+            {
+             "name": "Unclassified Proteobacteria",
+             "children": [
+              {"name": "Unclassified Proteobacteria", "size": 1393}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Actinobacteria",
+     "children": [
+      {
+       "name": "Actinobacteria",
+       "children": [
+        {
+         "name": "Actinomycetales",
+         "children": [
+          {
+           "name": "Corynebacteriaceae",
+           "children": [
+            {
+             "name": "Corynebacterium",
+             "children": [
+              {"name": "matruchotii", "size": 14967},
+              {"name": "durum", "size": 1732},
+              {"name": "Unclassified Corynebacterium", "size": 763}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Actinomycetaceae",
+           "children": [
+            {
+             "name": "Parascardovia",
+             "children": [
+              {"name": "Unclassified Parascardovia", "size": 13385}
+             ]
+            },
+            {
+             "name": "Actinomyces",
+             "children": [
+              {"name": "meyeri", "size": 2063},
+              {"name": "Unclassified Actinomyces", "size": 1254}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Micrococcaceae",
+           "children": [
+            {
+             "name": "Rothia",
+             "children": [
+              {"name": "dentocariosa", "size": 6455},
+              {"name": "Unclassified Rothia", "size": 2622},
+              {"name": "aeria", "size": 1371}
+             ]
+            }
+           ]
+          },
+          {
+           "name": "Unclassified Actinomycetales",
+           "children": [
+            {
+             "name": "Unclassified Actinomycetales",
+             "children": [
+              {"name": "Unclassified Actinomycetales", "size": 2486}
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "name": "Bifidobacteriales",
+         "children": [
+          {
+           "name": "Bifidobacteriaceae",
+           "children": [
+            {
+             "name": "Bifidobacterium",
+             "children": [
+              {"name": "scardovii", "size": 628}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Spirochaetes",
+     "children": [
+      {
+       "name": "Spirochaetes",
+       "children": [
+        {
+         "name": "Spirochaetales",
+         "children": [
+          {
+           "name": "Spirochaetaceae",
+           "children": [
+            {
+             "name": "Treponema",
+             "children": [
+              {"name": "medium", "size": 7099},
+              {"name": "socranskii", "size": 3479},
+              {"name": "denticola", "size": 2397},
+              {"name": "amylovorum", "size": 1562},
+              {"name": "succinifaciens", "size": 1261},
+              {"name": "lecithinolyticum", "size": 1225},
+              {"name": "Unclassified Treponema", "size": 593}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Unclassified Bacteria",
+     "children": [
+      {
+       "name": "Unclassified Bacteria",
+       "children": [
+        {
+         "name": "Unclassified Bacteria",
+         "children": [
+          {
+           "name": "Unclassified Bacteria",
+           "children": [
+            {
+             "name": "Unclassified Bacteria",
+             "children": [
+              {"name": "Unclassified Bacteria", "size": 6228}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Synergistetes",
+     "children": [
+      {
+       "name": "Synergistia",
+       "children": [
+        {
+         "name": "Synergistales",
+         "children": [
+          {
+           "name": "Synergistaceae",
+           "children": [
+            {
+             "name": "Candidatus Tammella",
+             "children": [
+              {"name": "caduceiae", "size": 2828}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "Verrucomicrobia",
+     "children": [
+      {
+       "name": "Opitutae",
+       "children": [
+        {
+         "name": "Pelagicoccales",
+         "children": [
+          {
+           "name": "Pelagicoccaceae",
+           "children": [
+            {
+             "name": "Pelagicoccus",
+             "children": [
+              {"name": "Unclassified Pelagicoccus", "size": 1033}
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+]
+
+;
+var classif_json =
+[
+  {level: "Kingdom", class: "86.136%" , unclass: "13.864%"},
+  {level: "Phylum", class: "84.928%" , unclass: "15.072%"},
+  {level: "Class", class: "82.490%" , unclass: "17.510%"},
+  {level: "Order", class: "81.599%" , unclass: "18.401%"},
+  {level: "Family", class: "80.651%" , unclass: "19.349%"},
+  {level: "Genus", class: "78.324%" , unclass: "21.676%"},
+  {level: "Species", class: "59.349%" , unclass: "40.651%"}
+]
+;
+</script>
+<script>drawSun();</script>
+<script>drawCol();</script>
+<script>drawClassifSummaryTable();</script>
