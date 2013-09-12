@@ -372,6 +372,8 @@
                     return "rotate(" + rotate + ")translate(" + (y(d.y + d.dy / 2)) + ")rotate(" + second_rot + ")";
                 })
                 .on("click", click)
+                .on("touch", click)
+                .on("touchstart", click)
                 .on("mouseover", mouseover)
                 .on("mouseout", mouseout);
             textEnter.append("tspan")
